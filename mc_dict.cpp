@@ -7,86 +7,70 @@
 
 #include <iostream>
 #include <fstream>
+#include <map>
 #include <random>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
+using namespace std;
 using json = nlohmann::json;
 
 int main() {
-
-    //////////////////////////////////////////////////////////////////////////
-    // examle of simple JSON dictionary
-    //
-    // json error_codes = {
-    //     {"1200", 1000}, 
-    //     {"1201", 100}, 
-    //     {"1202", 10}
-    //     };
-    // Print the JSON object
-    // std::cout << error_codes.dump(4) << std::endl;
-
-    //////////////////////////////////////////////////////////////////////////
-    // example of simple dictionary and how to use it to create a distribution
-    // to draw random errors from
-    /*
-
-    std::unordered_map<std::string, int> error_codes = {
-        {"1200", 1000},
-        {"1201", 100},
-        {"1202", 10}
-    };
-
-        // Extract weights into a vector
-    std::vector<double> weights;
-    for (const auto& pair : error_codes) {
-        weights.push_back(pair.second);
-    }
-
-    // Create a random number engine
-    std::random_device rd;
-    std::mt19937 gen(rd());
-
-    // Create a discrete distribution
-    std::discrete_distribution<> dist(weights.begin(), weights.end());
-
-    // Generate a random index
-    int random_index = dist(gen);
-
-    // Get the random error code
-    auto it = std::next(error_codes.begin(), random_index);
-    std::string random_error_code = it->first;
-
-    std::cout << "Random error code: " << random_error_code << std::endl;
-    */
 
     /////////////////////////////////////////////////////////////////////////////
     // How to read the dictionary from a JSON file and draw random errors from it
     // Note: we only want to create the error_codes dictionary and the random_index once
 
     // Read error codes from JSON file
-    std::ifstream file("../data/error_codes.json");
+    ifstream file("../data/error_codes.json");
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open error_codes.json\n";
+        cerr << "Error: Could not open error_codes.json\n";
         return 1;
     }
     json j;
     file >> j;
     if (!file) {
-        std::cerr << "Error: Failed to parse error_codes.json\n";
+        cerr << "Error: Failed to parse error_codes.json\n";
         return 1;
     }
 
-    // Extract the keys and values from the JSON and create the dictionary as an unordered map
-    std::unordered_map<std::string, int> error_codes;
-    for (const auto& [key, value] : j.items()) {
-        // Check if the value is an integer
-        if (!value.is_number_integer()) {
-            std::cerr << "Error: Value is not an integer: " << value << std::endl;
-            continue; // Skip this iteration
+    map<string, map<string, int>> dictionary;
+
+    for (const auto& [site_name, codes] : j.items()) {
+        for (const auto& [code, count] : codes.items()) {
+            dictionary[site_name][code] = count;
         }
-        error_codes[key] = value;
     }
+
+    // Access and use the dictionary
+    //for (const auto& [site_name, codes] : dictionary) {
+    //    cout << "Site: " << site_name << endl;
+    //    for (const auto& [code, count] : codes) {
+    //        cout << "  Code: " << code << ", Count: " << count << endl;
+    //    }
+    //    cout << endl;
+    //}
+
+    // The dictionary above, is assumed to be created once only. When it needs to be used, it will be for a
+    // given queue/site. At that point, it should be reduced to a simpler dictionary:
+
+    // Specify the site name you want to extract error codes from
+    string target_site_name = "SARA-MATRIX_VHIMEM"; // Replace with your desired site name
+
+    // Extract error codes and counts for the target site
+    unordered_map<string, int> error_codes;
+    if (dictionary.count(target_site_name) > 0) {
+        for (const auto& [code, count] : dictionary[target_site_name]) {
+            error_codes[code] = count;
+        }
+    } else {
+        cout << "Site not found: " << target_site_name << endl;
+    }
+
+    // Print the extracted error codes and counts
+    //for (const auto& [code, count] : error_codes) {
+    //    cout << "Error Code: " << code << ", Count: " << count << endl;
+    //}
 
     // Calculate the total weight
     int total_weight = 0;
