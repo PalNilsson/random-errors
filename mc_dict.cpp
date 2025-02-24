@@ -10,28 +10,131 @@
 #include <map>
 #include <random>
 #include <unordered_map>
+#include <string>
+#include <cstdlib>
+#include <utility> // for std::pair
 #include <nlohmann/json.hpp>
 
 using namespace std;
 using json = nlohmann::json;
 
-int main() {
+
+// Function to parse command-line arguments
+std::tuple<std::string, int, std::string> parseArguments(int argc, char* argv[]) {
+    std::unordered_map<std::string, std::string> args;
+
+    // Parse command-line arguments
+    for (int i = 1; i < argc - 1; i++) {
+        std::string key = argv[i];
+        std::string value = argv[i + 1];
+        if (key == "--input" || key == "--n" || key == "--queue") {
+            args[key] = value;
+            i++; // Skip next as it's a value
+        }
+    }
+
+    // Extract values with validation
+    if (args.find("--input") == args.end()) {
+        throw std::runtime_error("Error: Missing --input argument.");
+    }
+    if (args.find("--n") == args.end()) {
+        throw std::runtime_error("Error: Missing --n argument.");
+    }
+    if (args.find("--queue") == args.end()) {
+        throw std::runtime_error("Error: Missing --queue argument.");
+    }
+
+    std::string input_file = args["--input"];
+    std::string queue_name = args["--queue"];
+    int n;
+
+    try {
+        n = std::stoi(args["--n"]);
+    } catch (...) {
+        throw std::runtime_error("Error: Invalid value for --n. It must be an integer.");
+    }
+
+    return {input_file, n, queue_name};
+}
+
+
+void generateROOTScript(const std::unordered_map<int, int>& errorCounts, const std::string& filename = "error_hist.C") {
+    std::ofstream file(filename);
+
+    if (!file) {
+        std::cerr << "Error: Could not create ROOT script file!" << std::endl;
+        return;
+    }
+
+    file << "#include <TH1F.h>\n";
+    file << "#include <TCanvas.h>\n";
+    file << "#include <TApplication.h>\n\n";
+
+    file << "void error_hist() {\n";
+    file << "    TCanvas *c1 = new TCanvas(\"c1\", \"Error Code Histogram\", 800, 600);\n";
+    
+    int numBins = errorCounts.size();
+    int minError = errorCounts.begin()->first;
+    int maxError = minError;
+
+    for (const auto& pair : errorCounts) {
+        if (pair.first > maxError) maxError = pair.first;
+    }
+
+    file << "    TH1F *h = new TH1F(\"h\", \"Error Code Distribution;Error Code;Occurrences\", "
+         << numBins << ", " << minError - 0.5 << ", " << maxError + 0.5 << ");\n\n";
+
+    for (const auto& pair : errorCounts) {
+        file << "    h->Fill(" << pair.first << ", " << pair.second << ");\n";
+    }
+
+    file << "\n    h->SetFillColor(38);\n"; // Set histogram color
+    file << "    h->Draw();\n";
+    file << "    c1->SaveAs(\"error_hist.png\");\n"; // Save histogram as PNG
+    file << "}\n";
+
+    file.close();
+    std::cout << "ROOT script '" << filename << "' has been generated.\n";
+}
+
+
+int main(int argc, char* argv[]) {
 
     /////////////////////////////////////////////////////////////////////////////
     // How to read the dictionary from a JSON file and draw random errors from it
     // Note: we only want to create the error_codes dictionary and the random_index once
 
-    // Read error codes from JSON file
-    ifstream file("../data/error_codes.json");
-    if (!file.is_open()) {
-        cerr << "Error: Could not open error_codes.json\n";
+    // Read input file from arguments --input
+    if (argc < 5) {
+        cerr << "Usage: " << argv[0] << " --input <input_file> --n <number of errors>\n";
         return 1;
+    }
+
+    std::string input_file{""};
+    std::string queue_name{""};
+    int n{0};
+    try {
+        // Assign values from function
+        std::tie(input_file, n, queue_name) = parseArguments(argc, argv);
+        std::cout << "Input File: " << input_file << std::endl;
+        std::cout << "Number of errors: " << n << std::endl;
+        std::cout << "Queue Name: " << queue_name << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    // Read error codes from JSON file using the input argument
+    ifstream file(input_file);
+    if (!file.is_open()) {
+        cerr << "Error: Could not open " << input_file << endl;
+        return EXIT_FAILURE;
     }
     json j;
     file >> j;
     if (!file) {
-        cerr << "Error: Failed to parse error_codes.json\n";
-        return 1;
+        cerr << "Error: Failed to parse " << input_file << endl;
+        return EXIT_FAILURE;
     }
 
     map<string, map<string, int>> dictionary;
@@ -54,17 +157,14 @@ int main() {
     // The dictionary above, is assumed to be created once only. When it needs to be used, it will be for a
     // given queue/site. At that point, it should be reduced to a simpler dictionary:
 
-    // Specify the site name you want to extract error codes from
-    string target_site_name = "SARA-MATRIX_VHIMEM"; // Replace with your desired site name
-
     // Extract error codes and counts for the target site
     unordered_map<string, int> error_codes;
-    if (dictionary.count(target_site_name) > 0) {
-        for (const auto& [code, count] : dictionary[target_site_name]) {
+    if (dictionary.count(queue_name) > 0) {
+        for (const auto& [code, count] : dictionary[queue_name]) {
             error_codes[code] = count;
         }
     } else {
-        cout << "Site not found: " << target_site_name << endl;
+        cout << "Site not found: " << queue_name << endl;
     }
 
     // Print the extracted error codes and counts
@@ -89,14 +189,38 @@ int main() {
     }
     std::discrete_distribution<> dist(weights.begin(), weights.end());
 
-    // Generate a random index
-    int random_index = dist(gen);
+    int random_index{0};
+    int error_code{0};
+    std::string random_error_code{""};
+    auto it = error_codes.cbegin();
+    std::unordered_map<int, int> errorCounts;
 
-    // Get the random error code
-    auto it = std::next(error_codes.begin(), random_index);
-    std::string random_error_code = it->first;
+    for (int i = 0; i < n; i++) {
+        // Generate a random index
+        random_index = dist(gen);
 
-    std::cout << "Random error code: " << random_error_code << std::endl;
+        // Get the random error code
+        it = std::next(error_codes.cbegin(), random_index);
+        random_error_code = it->first;
 
-    return 0;
+        // try to convert random_error_code to int
+        try {
+            error_code = std::stoi(random_error_code);
+            errorCounts[error_code]++; // Increment the count for this error code
+            //std::cout << "Random error code: " << error_code << std::endl;
+        } catch (std::invalid_argument& e) {
+            std::cout << "Random error code: " << random_error_code << std::endl;
+        }
+    }
+
+    // Print the error codes and their counts
+    std::cout << "Error Code Counts:\n";
+    for (const auto& pair : errorCounts) {
+        std::cout << "Error Code " << pair.first << ": " << pair.second << " occurrences\n";
+    }
+
+    // Generate ROOT script
+    generateROOTScript(errorCounts);
+
+    return EXIT_SUCCESS;
 }
