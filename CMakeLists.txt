@@ -12,6 +12,7 @@ set(CMAKE_CXX_COMPILER "g++")
 
 # 
 add_executable(mc_dict mc_dict.cpp)
+add_executable(error_code_generator error_code_generator.cpp)
 
 # 
 include_directories(single_include)
