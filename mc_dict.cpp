@@ -106,7 +106,7 @@ int main(int argc, char* argv[]) {
 
     // Read input file from arguments --input
     if (argc < 5) {
-        cerr << "Usage: " << argv[0] << " --input <input_file> --n <number of errors>\n";
+        cerr << "Usage: " << argv[0] << " --input <input file> --queue <queue name>  --n <number of errors>\n";
         return 1;
     }
 
