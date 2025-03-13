@@ -5,4 +5,5 @@ Example of how to draw random panda errors from a distribution
 * mkdir build
 * cd build
 * cmake ..
-* ./mc_dict
+* make
+* ./mc_dict --input <input_file> --n <number of errors>
